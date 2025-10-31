@@ -1,0 +1,52 @@
+# Pipeline configuration
+pipeline:
+  name: nidstream_v1
+  version: "0.1.0"
+  
+# Data sources
+data:
+  s3_bucket: ${S3_BUCKET}
+  raw_data_path: s3a://${S3_BUCKET}/raw/CSE-CIC-IDS2018/
+  processed_data_path: data/processed/
+  predictions_path: data/predictions/
+
+# Spark configuration
+spark:
+  app_name: NIDStream
+  master: local[*]  # Change to yarn for cluster mode
+  executor_memory: 4g
+  driver_memory: 4g
+  executor_cores: 4
+  
+# Preprocessing
+preprocessing:
+  handle_missing: true
+  remove_duplicates: true
+  remove_outliers: false  # Be cautious with outlier removal in anomaly detection
+  normalize_labels: true
+
+# Feature engineering
+feature_engineering:
+  extract_temporal: true
+  create_ratios: true
+  create_statistical: true
+  create_protocol: true
+  apply_log_transform: true
+
+# Model artifacts
+models:
+  save_path: models/
+  mlflow_tracking_uri: ${MLFLOW_TRACKING_URI:-http://localhost:5000}
+  experiment_name: nidstream-experiments
+
+# Inference
+inference:
+  batch_size: 1000
+  threshold: 0.5
+  return_probabilities: true
+
+# Monitoring
+monitoring:
+  log_level: INFO
+  metrics_tracking: true
+  data_quality_checks: true
