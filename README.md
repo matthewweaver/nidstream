@@ -27,7 +27,7 @@ The pipeline follows: `Load (S3) → Preprocess (Spark) → Feature Engineering 
 ### Core Modules
 
 - **`src/feature_pipeline/`**: Spark-based data loading, preprocessing, feature engineering from S3
-  - `load.py`: Load CSE-CIC-IDS2018 CSVs from S3 using PySpark
+  - `load.py`: Load BCCC-CSE-CIC-IDS2018 CSVs from S3 using PySpark
   - `preprocess.py`: Clean network flow data, handle missing values, normalize
   - `feature_engineering.py`: Extract temporal patterns, flow statistics, protocol features
   
@@ -54,18 +54,19 @@ The pipeline follows: `Load (S3) → Preprocess (Spark) → Feature Engineering 
 
 ### Cloud Infrastructure
 
-- **AWS S3**: Data lake for CSE-CIC-IDS2018 CSVs, processed features, trained models
+- **AWS S3**: Data lake for BCCC-CSE-CIC-IDS2018 CSVs, processed features, trained models
 - **Amazon ECR**: Container registry for Docker images
 - **Amazon ECS/Fargate**: Serverless container orchestration
 - **Application Load Balancer**: Traffic distribution between API and dashboard
 - **GitHub Actions**: Automated testing and deployment
 
-## Dataset: CSE-CIC-IDS2018
+## Dataset: BCCC-CSE-CIC-IDS2018
 
-The Canadian Institute for Cybersecurity dataset contains network traffic captures with labeled attacks:
+The [BCCC-CSE-CIC-IDS2018](https://www.kaggle.com/datasets/bcccdatasets/large-scale-ids-dataset-bccc-cse-cic-ids2018) is an updated version of the Canadian Institute for Cybersecurity dataset containing network traffic captures with labeled attacks:
 - **Benign traffic**: Normal network activity
 - **Attack types**: Botnet, Brute Force, DoS, DDoS, Infiltration, Web Attacks, etc.
-- **Features**: 80+ flow-based features (packet stats, protocol info, timing patterns)
+- **Features**: 300+ flow-based features (packet stats, protocol info, timing patterns)
+- **Source**: Available on [Kaggle](https://www.kaggle.com/datasets/bcccdatasets/large-scale-ids-dataset-bccc-cse-cic-ids2018?resource=download)
 
 ## Getting Started
 
@@ -237,7 +238,7 @@ nidstream/
 
 ### Spark Integration
 - All data loading and preprocessing use PySpark for scalability
-- Handles large CSE-CIC-IDS2018 dataset distributed across S3
+- Handles large BCCC-CSE-CIC-IDS2018 dataset distributed across S3
 - Spark sessions configured for optimal memory usage
 
 ### Data Leakage Prevention
@@ -282,4 +283,5 @@ MIT License
 
 ## Acknowledgments
 
-- Canadian Institute for Cybersecurity for the CSE-CIC-IDS2018 dataset
+- Canadian Institute for Cybersecurity and BCCC for the BCCC-CSE-CIC-IDS2018 dataset
+- Dataset available at: https://www.kaggle.com/datasets/bcccdatasets/large-scale-ids-dataset-bccc-cse-cic-ids2018
