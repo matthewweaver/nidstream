@@ -80,19 +80,15 @@ The [BCCC-CSE-CIC-IDS2018](https://www.kaggle.com/datasets/bcccdatasets/large-sc
 ### Installation
 
 ```bash
-# Install UV (if not already installed)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
 # Clone repository
 git clone <repo-url>
 cd nidstream
 
-# Install dependencies
-uv sync
-
-# Install with dev dependencies
-uv sync --extra dev
+# One-command setup (installs all dependencies from PyPI)
+./setup.sh
 ```
+
+**Note**: The `setup.sh` script ensures dependencies are installed from PyPI only, ignoring any corporate package indexes you may have configured globally.
 
 ### Environment Setup
 
@@ -149,13 +145,21 @@ Visit `http://localhost:5000` to view experiments and model metrics.
 # Start FastAPI server locally
 uv run uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 
-# Test health endpoint
+# In another terminal, test the health endpoint
 curl http://localhost:8000/health
 
-# Make prediction
+# Generate a sample flow from test data
+python scripts/csv_to_json.py 0
+
+# Make prediction with real data
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d @sample_flow.json
+
+# Pretty-print the response
+curl -s -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d @sample_flow.json | python -m json.tool
 ```
 
 ### Streamlit Dashboard

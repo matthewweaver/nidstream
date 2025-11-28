@@ -3,7 +3,7 @@ name = "nidstream"
 version = "0.1.0"
 description = "End-to-end ML pipeline for Network Intrusion Detection using anomaly detection on CSE-CIC-IDS2018 dataset"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     # ML/Data Processing
     "pandas>=2.1.1",
@@ -22,6 +22,7 @@ dependencies = [
     # API & Web
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
+    "python-multipart>=0.0.6",  # Required for FastAPI file uploads
     "streamlit>=1.28.0",
     "plotly>=5.17.0",
     

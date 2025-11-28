@@ -50,9 +50,11 @@ mlartifacts/
 data/raw/*
 data/processed/*
 data/predictions/*
+data/samples/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/predictions/.gitkeep
+!data/samples/.gitkeep
 
 # Models
 models/*.pkl

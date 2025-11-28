@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+ENV/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Project specific
+mlruns/
+data/raw/
+data/processed/
+notebooks/
+tests/
+docs/
+examples/
+.github/
+QUICKSTART.md
+setup.sh
+scripts/
+credstash.log
+.env.example
+.python-version
+pytest.ini
+nidstream-api-task-def.json
+nidstream-dashboard-task-def.json
