@@ -19,6 +19,7 @@ Traditional Intrusion Detection Systems (IDS) rely on known signatures. This pro
 - 📊 **Real-time dashboard** with Streamlit for anomaly visualization
 - 🚀 **CI/CD pipeline** with GitHub Actions
 - 🧪 **Comprehensive testing** with pytest
+- ⏱️ **Temporal features** with sliding windows for time-series attack detection
 
 ## Architecture
 
@@ -30,14 +31,17 @@ The pipeline follows: `Load (S3) → Preprocess (Spark) → Feature Engineering 
   - `load.py`: Load BCCC-CSE-CIC-IDS2018 CSVs from S3 using PySpark
   - `preprocess.py`: Clean network flow data, handle missing values, normalize
   - `feature_engineering.py`: Extract temporal patterns, flow statistics, protocol features
+  - `temporal_features.py`: **NEW** - Sliding window features for time-series attack detection
   
 - **`src/training_pipeline/`**: Model training with hyperparameter tuning
   - `train.py`: Train anomaly detection models (Isolation Forest, XGBoost, Autoencoder)
+  - `train_temporal.py`: **NEW** - Train models with temporal/sequential features
   - `tune.py`: Optuna-based hyperparameter optimization with MLflow
   - `eval.py`: Evaluate on test set with precision, recall, F1, AUC-ROC
   
 - **`src/inference_pipeline/`**: Production inference
-  - `inference.py`: Real-time anomaly scoring on new network flows
+  - `predict.py`: Real-time anomaly scoring on new network flows
+  - `predict_temporal.py`: **NEW** - Stateful inference with temporal context
   
 - **`src/batch/`**: Batch prediction processing
   - `run_batch.py`: Process network logs in batches
@@ -171,7 +175,99 @@ uv run streamlit run app.py --server.port 8501 --server.address 0.0.0.0
 
 Visit `http://localhost:8501` to interact with the dashboard.
 
-### Docker
+### Temporal Streaming (Real-time Simulation)
+
+#### Option 1: From Streamlit Dashboard (Recommended)
+
+The easiest way to run temporal streaming with live visualization:
+
+1. **Upload temporal CSV**: In the dashboard sidebar under "🌊 Temporal Streaming", upload your `X_test_temporal.csv` file
+2. **Configure settings**: 
+   - Adjust stream speed (0.5x to 10x)
+   - Set max flows (default: 0 = unlimited continuous streaming)
+3. **Start streaming**: Click "▶️ Start Stream" 
+4. **Watch live predictions**: See real-time predictions appear on the dashboard with:
+   - Live progress bar (when max flows is set)
+   - Current flow details (timestamp, prediction, probability)
+   - Real-time attack detection alerts in the feed
+   - **Live-updating chart** showing prediction timeline
+   - Streaming statistics (flows sent, attacks detected, throughput)
+
+**Continuous Streaming Mode:**
+- Set "Max Flows" to **0** for unlimited continuous streaming
+- The system will loop through your temporal data indefinitely
+- Simulates a real-world production environment
+- Predictions update in real-time on the dashboard
+- Stop anytime with the "⏹️ Stop" button
+
+The dashboard automatically:
+- Reads timestamps from the CSV
+- Calculates authentic delays between flows
+- Sends predictions to the API one by one
+- Updates visualizations in real-time after each prediction
+- Tracks streaming statistics
+- Loops through data continuously when in unlimited mode
+
+#### Option 2: Command Line Script
+
+For command-line streaming with detailed logs:
+
+```bash
+# First, generate temporal test data (if not already done)
+# Run the feature engineering notebook cell that creates X_test_temporal.csv
+
+# Stream flows in real-time (1x speed)
+uv run python scripts/stream_temporal.py
+
+# Stream at 2x speed (faster simulation)
+uv run python scripts/stream_temporal.py --speed 2.0
+
+# Stream first 100 flows at 5x speed
+uv run python scripts/stream_temporal.py --speed 5.0 --max-flows 100
+
+# Use custom data file
+uv run python scripts/stream_temporal.py --data data/processed/X_test_temporal.csv
+```
+
+**Features:**
+- Replays network flows with original temporal delays
+- Sends predictions to API one by one
+- Adjustable speed multiplier (0.5x to 10x)
+- Real-time attack detection logging
+- Summary statistics after streaming
+
+### Docker Compose
+
+Spin up the entire stack (API, Dashboard, MLflow) with one command:
+
+```bash
+# Start all services in detached mode
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Check service status
+docker-compose ps
+
+# Stop all services (keeps data in mlruns/ and models/)
+docker-compose down
+
+# Stop and remove all volumes (WARNING: deletes MLflow data)
+docker-compose down -v
+```
+
+Access the services:
+- **FastAPI**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
+- **Streamlit Dashboard**: http://localhost:8501
+- **MLflow UI**: http://localhost:5000
+
+**Data Persistence**: Your MLflow experiments, trained models, and data persist on your local filesystem in `./mlruns`, `./models`, and `./data` directories. They survive container restarts.
+
+### Docker (Individual Containers)
+
+Alternatively, build and run containers individually:
 
 ```bash
 # Build API container

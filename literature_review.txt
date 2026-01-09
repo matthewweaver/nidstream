@@ -1,0 +1,6 @@
+Characterization of Tor Traffic using Time based Features, 2017
+https://pdfs.semanticscholar.org/d76f/32eb3af1a163c0fde624e9fc229671ca75b6.pdf
+
+Temporal Analysis of NetFlow Datasets for Network Intrusion Detection Systems, 2025
+https://arxiv.org/html/2503.04404v2
+https://staff.itee.uq.edu.au/marius/NIDS_datasets/
