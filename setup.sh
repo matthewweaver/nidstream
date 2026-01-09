@@ -15,7 +15,7 @@ PIP_EXTRA_INDEX_URL="" \
 UV_EXTRA_INDEX_URL="" \
 PIP_INDEX_URL="https://pypi.org/simple" \
 UV_INDEX_URL="https://pypi.org/simple" \
-uv sync
+uv sync --all-extras
 
 echo "✅ Setup complete!"
 echo ""
