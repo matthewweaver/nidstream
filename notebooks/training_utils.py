@@ -1,6 +1,7 @@
 """
 Shared utilities for model training notebooks.
 Eliminates code duplication across model training notebooks.
+Supports both pandas/sklearn (small datasets) and PySpark (large datasets).
 """
 
 import time
@@ -12,10 +13,14 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, average_precision_score, f1_score, precision_score, recall_score, roc_auc_score
 
+# ============================================================================
+# PANDAS/SKLEARN FUNCTIONS (For datasets < 5GB that fit in memory)
+# ============================================================================
+
 
 def load_training_data(use_smote=False):
     """
-    Load training and test data.
+    Load training and test data from Parquet format (optimized for large datasets).
 
     Args:
         use_smote: If True, load SMOTE-balanced training data
@@ -26,17 +31,20 @@ def load_training_data(use_smote=False):
     project_root = Path().resolve()
     processed_dir = project_root / "data" / "processed"
 
-    print(f"Loading {'SMOTE' if use_smote else 'original'} training data...")
+    print(f"Loading {'balanced' if use_smote else 'original'} training data from Parquet...")
 
     if use_smote:
-        X_train = pd.read_csv(processed_dir / "X_train_smote.csv", dtype=np.float32)
-        y_train = pd.read_csv(processed_dir / "y_train_smote.csv")["label"].values
+        # Load balanced data
+        X_train = pd.read_parquet(processed_dir / "X_train_balanced.parquet")
+        y_train = pd.read_parquet(processed_dir / "y_train_balanced.parquet")["label_binary"].values
     else:
-        X_train = pd.read_csv(processed_dir / "X_train.csv", dtype=np.float32)
-        y_train = pd.read_csv(processed_dir / "y_train.csv")["label"].values
+        # Load original data
+        X_train = pd.read_parquet(processed_dir / "X_train.parquet")
+        y_train = pd.read_parquet(processed_dir / "y_train.parquet")["label_binary"].values
 
-    X_test = pd.read_csv(processed_dir / "X_test.csv", dtype=np.float32)
-    y_test = pd.read_csv(processed_dir / "y_test.csv")["label"].values
+    # Test data is same for both strategies
+    X_test = pd.read_parquet(processed_dir / "X_test.parquet")
+    y_test = pd.read_parquet(processed_dir / "y_test.parquet")["label_binary"].values
 
     print(f"  Training set: {X_train.shape}")
     print(f"  Test set: {X_test.shape}")
@@ -215,5 +223,246 @@ def print_summary(metrics_smote, metrics_weighted, model_name):
     print(f"  Recall: {metrics_weighted['recall']:.4f}")
 
     better = "SMOTE" if metrics_smote["pr_auc"] > metrics_weighted["pr_auc"] else "Class Weight"
+    print(f"\n✨ Best Strategy: {better}")
+    print("=" * 80)
+
+
+# ============================================================================
+# PYSPARK FUNCTIONS (For large datasets > 5GB that don't fit in memory)
+# ============================================================================
+
+
+def load_training_data_pyspark(spark, use_balanced=False):
+    """
+    Load training and test data using PySpark for large datasets.
+
+    Args:
+        spark: SparkSession instance
+        use_balanced: If True, load balanced/oversampled training data
+
+    Returns:
+        tuple: (train_orig_vec, train_balanced_vec, test_vec, feature_cols, project_root)
+            - train_orig_vec: Original training data with features vector
+            - train_balanced_vec: Balanced training data with features vector
+            - test_vec: Test data with features vector
+            - feature_cols: List of feature column names
+            - project_root: Project root path
+    """
+    from pyspark.ml.feature import VectorAssembler
+    from pyspark.sql.functions import col
+
+    project_root = Path().resolve()
+    processed_dir = project_root / "data" / "processed"
+
+    print("Loading training and test data from Parquet with PySpark...")
+
+    # Load original training data (for class weight strategy)
+    X_train_orig = spark.read.parquet(str(processed_dir / "X_train.parquet"))
+    y_train_orig = spark.read.parquet(str(processed_dir / "y_train.parquet"))
+
+    # Load balanced training data (for balanced strategy)
+    X_train_balanced = spark.read.parquet(str(processed_dir / "X_train_balanced.parquet"))
+    y_train_balanced = spark.read.parquet(str(processed_dir / "y_train_balanced.parquet"))
+
+    # Load test data (same for both strategies)
+    X_test = spark.read.parquet(str(processed_dir / "X_test.parquet"))
+    y_test = spark.read.parquet(str(processed_dir / "y_test.parquet"))
+
+    print(f"✓ Data loaded")
+    print(f"  Original train: {X_train_orig.count():,} rows, {len(X_train_orig.columns)} features")
+    print(f"  Balanced train: {X_train_balanced.count():,} rows, {len(X_train_balanced.columns)} features")
+    print(f"  Test: {X_test.count():,} rows, {len(X_test.columns)} features")
+
+    # Prepare datasets for ML training
+    feature_cols = X_train_orig.columns
+
+    # Combine features with labels
+    train_orig = X_train_orig.join(y_train_orig)
+    train_balanced = X_train_balanced.join(y_train_balanced)
+    test = X_test.join(y_test)
+
+    print(f"✓ Combined features and labels")
+
+    # Assemble features into vector column
+    assembler = VectorAssembler(inputCols=feature_cols, outputCol="features")
+
+    train_orig_vec = assembler.transform(train_orig).select("features", col("label_binary").alias("label"))
+    train_balanced_vec = assembler.transform(train_balanced).select("features", col("label_binary").alias("label"))
+    test_vec = assembler.transform(test).select("features", col("label_binary").alias("label"))
+
+    print(f"✓ Assembled feature vectors")
+
+    # Check class distribution
+    print("\nOriginal train class distribution:")
+    train_orig_vec.groupBy("label").count().show()
+
+    print("\nBalanced train class distribution:")
+    train_balanced_vec.groupBy("label").count().show()
+
+    print("\nTest class distribution:")
+    test_vec.groupBy("label").count().show()
+
+    return train_orig_vec, train_balanced_vec, test_vec, feature_cols, project_root
+
+
+def train_and_evaluate_pyspark(model_class, model_params, train_data, test_data, model_name, use_class_weights=False):
+    """
+    Train a PySpark ML model and evaluate on test set.
+
+    Args:
+        model_class: PySpark ML model class (e.g., LogisticRegression)
+        model_params: Dictionary of model parameters
+        train_data: Training data with 'features' and 'label' columns
+        test_data: Test data with 'features' and 'label' columns
+        model_name: Name for printing
+        use_class_weights: If True, add class weight column to training data
+
+    Returns:
+        tuple: (trained_model, metrics_dict, predictions)
+    """
+    from pyspark.ml.evaluation import BinaryClassificationEvaluator, MulticlassClassificationEvaluator
+    from pyspark.sql.functions import col, when
+
+    print("=" * 80)
+    print(f"TRAINING: {model_name}")
+    print("=" * 80)
+
+    # Add class weights if requested
+    if use_class_weights:
+        # Calculate class weights (inverse of class frequency)
+        class_counts = train_data.groupBy("label").count().collect()
+        total = sum([row["count"] for row in class_counts])
+        class_weights = {row["label"]: total / (2 * row["count"]) for row in class_counts}
+
+        print(f"Class weights: {class_weights}")
+
+        # Add class weight column
+        train_data = train_data.withColumn("classWeight", when(col("label") == 0, class_weights[0]).otherwise(class_weights[1]))
+        model_params["weightCol"] = "classWeight"
+
+    # Create and train model
+    start_time = time.time()
+    model = model_class(**model_params)
+    trained_model = model.fit(train_data)
+    train_time = time.time() - start_time
+
+    print(f"✓ Training completed in {train_time:.2f} seconds")
+    if hasattr(trained_model, "summary"):
+        print(f"  Iterations: {trained_model.summary.totalIterations}")
+        if hasattr(trained_model.summary, "objectiveHistory"):
+            print(f"  Objective history: {trained_model.summary.objectiveHistory[-1]:.6f} (final)")
+
+    # Evaluate
+    print("\n" + "=" * 80)
+    print(f"EVALUATING: {model_name}")
+    print("=" * 80)
+
+    predictions = trained_model.transform(test_data)
+
+    # Binary classification metrics
+    binary_evaluator = BinaryClassificationEvaluator(labelCol="label", rawPredictionCol="rawPrediction")
+    auc = binary_evaluator.evaluate(predictions, {binary_evaluator.metricName: "areaUnderROC"})
+    pr_auc = binary_evaluator.evaluate(predictions, {binary_evaluator.metricName: "areaUnderPR"})
+
+    # Multiclass metrics (for accuracy, precision, recall, F1)
+    multi_evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction")
+    accuracy = multi_evaluator.evaluate(predictions, {multi_evaluator.metricName: "accuracy"})
+    precision = multi_evaluator.evaluate(predictions, {multi_evaluator.metricName: "weightedPrecision"})
+    recall = multi_evaluator.evaluate(predictions, {multi_evaluator.metricName: "weightedRecall"})
+    f1 = multi_evaluator.evaluate(predictions, {multi_evaluator.metricName: "f1"})
+
+    metrics = {
+        "accuracy": accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "roc_auc": auc,
+        "pr_auc": pr_auc,
+        "train_time": train_time,
+    }
+
+    print(f"Test Set Metrics:")
+    print(f"  Accuracy:  {accuracy:.4f}")
+    print(f"  Precision: {precision:.4f}")
+    print(f"  Recall:    {recall:.4f}")
+    print(f"  F1 Score:  {f1:.4f}")
+    print(f"  ROC AUC:   {auc:.4f}")
+    print(f"  PR AUC:    {pr_auc:.4f}")
+    print(f"  Train time: {train_time:.2f}s")
+
+    return trained_model, metrics, predictions
+
+
+def save_models_pyspark(model_balanced, model_weighted, metrics_balanced, metrics_weighted, model_prefix, project_root):
+    """
+    Save PySpark ML models and metrics to disk.
+
+    Args:
+        model_balanced: Balanced-trained model
+        model_weighted: Class weight-trained model
+        metrics_balanced: Metrics for balanced model
+        metrics_weighted: Metrics for weighted model
+        model_prefix: Prefix for filenames (e.g., 'lr', 'rf', 'xgb')
+        project_root: Project root path
+    """
+    import pickle
+
+    # Save PySpark ML models
+    models_dir = project_root / "models" / "pyspark"
+    models_dir.mkdir(parents=True, exist_ok=True)
+
+    model_balanced_path = str(models_dir / f"{model_prefix}_balanced")
+    model_weighted_path = str(models_dir / f"{model_prefix}_weighted")
+
+    model_balanced.write().overwrite().save(model_balanced_path)
+    model_weighted.write().overwrite().save(model_weighted_path)
+
+    print(f"✅ Saved models:")
+    print(f"  {model_balanced_path}")
+    print(f"  {model_weighted_path}")
+
+    # Save metrics
+    metrics_dir = project_root / "models" / "metrics"
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+
+    metrics = {f"{model_prefix.upper()}_Balanced": metrics_balanced, f"{model_prefix.upper()}_Weighted": metrics_weighted}
+
+    metrics_path = metrics_dir / f"{model_prefix}_pyspark_metrics.pkl"
+    with open(metrics_path, "wb") as f:
+        pickle.dump(metrics, f)
+
+    print(f"✅ Saved metrics: {metrics_path}")
+
+
+def print_summary_pyspark(metrics_balanced, metrics_weighted, model_name):
+    """
+    Print training summary comparing both strategies for PySpark models.
+
+    Args:
+        metrics_balanced: Metrics for balanced model
+        metrics_weighted: Metrics for weighted model
+        model_name: Name of model (e.g., 'Logistic Regression')
+    """
+    print("\n" + "=" * 80)
+    print(f"{model_name.upper()} MODEL COMPARISON")
+    print("=" * 80)
+
+    print("\nBalanced Data Strategy:")
+    for metric, value in metrics_balanced.items():
+        if metric != "train_time":
+            print(f"  {metric:12s}: {value:.4f}")
+        else:
+            print(f"  {metric:12s}: {value:.2f}s")
+
+    print("\nClass Weight Strategy:")
+    for metric, value in metrics_weighted.items():
+        if metric != "train_time":
+            print(f"  {metric:12s}: {value:.4f}")
+        else:
+            print(f"  {metric:12s}: {value:.2f}s")
+
+    better = "Balanced" if metrics_balanced["pr_auc"] > metrics_weighted["pr_auc"] else "Class Weight"
+    print(f"\n✨ Best Strategy: {better}")
+    print("=" * 80)
     print(f"\n✅ Better strategy for {model_name}: {better}")
     print("=" * 80)

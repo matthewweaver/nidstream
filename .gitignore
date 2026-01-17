@@ -57,7 +57,7 @@ data/samples/*
 !data/samples/.gitkeep
 
 # Models
-models/*.pkl
+*.pkl
 models/*.h5
 models/*.pb
 models/*.joblib

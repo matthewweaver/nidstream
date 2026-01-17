@@ -15,7 +15,7 @@ dependencies = [
     "seaborn>=0.13.2",
     
     # Spark for large-scale data processing
-    "pyspark>=3.5.0",
+    "pyspark>=3.5.0,<4.0.0",  # PySpark 4.x has breaking changes
     
     # Deep Learning (for advanced anomaly detection)
     "tensorflow>=2.15.0",
