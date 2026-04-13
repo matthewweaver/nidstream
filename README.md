@@ -17,9 +17,6 @@ Traditional Intrusion Detection Systems (IDS) rely on known signatures. This pro
 - 🐳 **Containerized deployment** with Docker on AWS ECS/Fargate
 - ⚖️ **Load balancing** with AWS Application Load Balancer
 - 📊 **Real-time dashboard** with Streamlit for anomaly visualization
-- 🚀 **CI/CD pipeline** with GitHub Actions
-- 🧪 **Comprehensive testing** with pytest
-- ⏱️ **Temporal features** with sliding windows for time-series attack detection
 
 ## Architecture
 
@@ -76,222 +73,134 @@ The [BCCC-CSE-CIC-IDS2018](https://www.kaggle.com/datasets/bcccdatasets/large-sc
 
 ### Prerequisites
 
-- Python 3.11+
-- UV for Python package management
-- AWS account with S3 access
-- Docker (for containerization)
+- Python 3.11+ and [UV](https://docs.astral.sh/uv/)
+- Docker and Docker Compose
+- AWS account with an `nidstream` profile configured in `~/.aws/credentials`
+- For AWS training: AWS CLI + [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
 
 ### Installation
 
 ```bash
-# Clone repository
 git clone <repo-url>
 cd nidstream
-
-# One-command setup (installs all dependencies from PyPI)
-./setup.sh
+uv sync
 ```
 
-**Note**: The `setup.sh` script ensures dependencies are installed from PyPI only, ignoring any corporate package indexes you may have configured globally.
+The `.env` file is pre-configured for local development. No changes needed to get started.
 
-### Environment Setup
+---
 
-Create `.env` file with AWS credentials:
+## Running Locally
+
+All local services (MLflow, FastAPI, Streamlit) run via Docker Compose:
 
 ```bash
-AWS_ACCESS_KEY_ID=your_access_key
-AWS_SECRET_ACCESS_KEY=your_secret_key
-AWS_DEFAULT_REGION=us-east-1
-S3_BUCKET=your-nids-data-bucket
-MLFLOW_TRACKING_URI=http://localhost:5000
+bash scripts/start.sh
 ```
 
-## Common Commands
-
-### Data Pipeline
+| Service | URL |
+|---------|-----|
+| MLflow UI | http://localhost:5000 |
+| FastAPI | http://localhost:8000 |
+| API Docs | http://localhost:8000/docs |
+| Streamlit Dashboard | http://localhost:8501 |
 
 ```bash
-# Load data from S3 using Spark
-uv run python src/feature_pipeline/load.py
-
-# Preprocess network flows
-uv run python -m src.feature_pipeline.preprocess
-
-# Feature engineering
-uv run python -m src.feature_pipeline.feature_engineering
+# Stop everything
+bash scripts/stop.sh --local
 ```
 
-### Training Pipeline
+MLflow experiment data is stored in `./mlruns/` and persists across restarts.
+
+---
+
+## Running on AWS (EMR Training)
+
+Training notebooks run on an EMR cluster for large-scale PySpark jobs. Local services still run via Docker Compose, with MLflow backed by S3 so experiment history is shared between EMR and local runs.
+
+### One-time setup
 
 ```bash
-# Train baseline anomaly detection model
-uv run python src/training_pipeline/train.py
-
-# Hyperparameter tuning with MLflow tracking
-uv run python src/training_pipeline/tune.py
-
-# Evaluate model performance
-uv run python src/training_pipeline/eval.py
+# Create IAM roles needed for EMR + SSM access
+bash scripts/emr/01_create_emr_roles.sh
 ```
 
-### MLflow Tracking
+### Start everything
 
 ```bash
-# Start MLflow UI
-uv run mlflow ui --host 0.0.0.0 --port 5000
+bash scripts/start.sh --aws
 ```
 
-Visit `http://localhost:5000` to view experiments and model metrics.
+This will:
+1. Start local services (MLflow pointed at `s3://nidstream/mlflow`, FastAPI, Streamlit)
+2. Sync `notebooks/training_utils.py` to S3
+3. Find a running `nidstream-spark` cluster or launch a new one (~5-8 min first time)
+4. Open SSM port-forwarding tunnels — press `Ctrl+C` to close tunnels (services keep running)
 
-### API Service
+| Tunnel | URL |
+|--------|-----|
+| Livy / PySpark kernel | localhost:8998 |
+| Spark UI | http://localhost:4040 |
+| YARN Resource Manager | http://localhost:8088 |
+
+### Connect VS Code notebooks to EMR
+
+1. Open a notebook in VS Code
+2. Click the kernel picker (top-right)
+3. Select `pysparkkernel` — Spark Magics connects to Livy on `localhost:8998` automatically
+
+### Stop everything (including EMR)
 
 ```bash
-# Start FastAPI server locally
-uv run uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
-
-# In another terminal, test the health endpoint
-curl http://localhost:8000/health
-
-# Generate a sample flow from test data
-python scripts/csv_to_json.py 0
-
-# Make prediction with real data
-curl -X POST http://localhost:8000/predict \
-  -H "Content-Type: application/json" \
-  -d @sample_flow.json
-
-# Pretty-print the response
-curl -s -X POST http://localhost:8000/predict \
-  -H "Content-Type: application/json" \
-  -d @sample_flow.json | python -m json.tool
+bash scripts/stop.sh
 ```
 
-### Streamlit Dashboard
+This stops Docker services, closes SSM tunnels, and terminates the EMR cluster to stop billing.
+
+> The cluster also auto-terminates after 2 hours idle. Running cost: ~$0.67/hr (1 master + 2 core m5.xlarge).
+
+---
+
+## Training Notebooks
+
+Notebooks live in `notebooks/BCCC-CSE-CIC-IDS2018/`. Each handles both local (local Spark) and EMR (existing session) automatically via environment detection.
+
+| Notebook | Description |
+|----------|-------------|
+| `01_eda.ipynb` | Exploratory data analysis |
+| `02a_feature_engineering.ipynb` | Feature engineering (pandas) |
+| `02b_feature_engineering_pyspark.ipynb` | Feature engineering (PySpark) |
+| `03a_train_logistic_regression_pyspark.ipynb` | Logistic Regression |
+| `03b_train_random_forest.ipynb` | Random Forest |
+| `03c_train_xgboost.ipynb` | XGBoost |
+| `04_model_comparison.ipynb` | Compare all trained models |
+
+All PySpark training notebooks log metrics and parameters to MLflow automatically.
+
+---
+
+## Temporal Streaming (Real-time Simulation)
+
+### From the Streamlit Dashboard (recommended)
+
+1. In the sidebar under **Temporal Streaming**, upload `X_test_temporal.csv`
+2. Set stream speed (0.5x–10x) and max flows (0 = continuous loop)
+3. Click **Start Stream** — predictions appear live with attack detection alerts
+
+### From the command line
 
 ```bash
-# Start dashboard locally
-uv run streamlit run app.py --server.port 8501 --server.address 0.0.0.0
-```
-
-Visit `http://localhost:8501` to interact with the dashboard.
-
-### Temporal Streaming (Real-time Simulation)
-
-#### Option 1: From Streamlit Dashboard (Recommended)
-
-The easiest way to run temporal streaming with live visualization:
-
-1. **Upload temporal CSV**: In the dashboard sidebar under "🌊 Temporal Streaming", upload your `X_test_temporal.csv` file
-2. **Configure settings**: 
-   - Adjust stream speed (0.5x to 10x)
-   - Set max flows (default: 0 = unlimited continuous streaming)
-3. **Start streaming**: Click "▶️ Start Stream" 
-4. **Watch live predictions**: See real-time predictions appear on the dashboard with:
-   - Live progress bar (when max flows is set)
-   - Current flow details (timestamp, prediction, probability)
-   - Real-time attack detection alerts in the feed
-   - **Live-updating chart** showing prediction timeline
-   - Streaming statistics (flows sent, attacks detected, throughput)
-
-**Continuous Streaming Mode:**
-- Set "Max Flows" to **0** for unlimited continuous streaming
-- The system will loop through your temporal data indefinitely
-- Simulates a real-world production environment
-- Predictions update in real-time on the dashboard
-- Stop anytime with the "⏹️ Stop" button
-
-The dashboard automatically:
-- Reads timestamps from the CSV
-- Calculates authentic delays between flows
-- Sends predictions to the API one by one
-- Updates visualizations in real-time after each prediction
-- Tracks streaming statistics
-- Loops through data continuously when in unlimited mode
-
-#### Option 2: Command Line Script
-
-For command-line streaming with detailed logs:
-
-```bash
-# First, generate temporal test data (if not already done)
-# Run the feature engineering notebook cell that creates X_test_temporal.csv
-
-# Stream flows in real-time (1x speed)
-uv run python scripts/stream_temporal.py
-
-# Stream at 2x speed (faster simulation)
-uv run python scripts/stream_temporal.py --speed 2.0
-
-# Stream first 100 flows at 5x speed
+uv run python scripts/stream_temporal.py              # 1x speed
+uv run python scripts/stream_temporal.py --speed 2.0  # 2x speed
 uv run python scripts/stream_temporal.py --speed 5.0 --max-flows 100
-
-# Use custom data file
-uv run python scripts/stream_temporal.py --data data/processed/X_test_temporal.csv
 ```
 
-**Features:**
-- Replays network flows with original temporal delays
-- Sends predictions to API one by one
-- Adjustable speed multiplier (0.5x to 10x)
-- Real-time attack detection logging
-- Summary statistics after streaming
+---
 
-### Docker Compose
-
-Spin up the entire stack (API, Dashboard, MLflow) with one command:
+## Testing
 
 ```bash
-# Start all services in detached mode
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Check service status
-docker-compose ps
-
-# Stop all services (keeps data in mlruns/ and models/)
-docker-compose down
-
-# Stop and remove all volumes (WARNING: deletes MLflow data)
-docker-compose down -v
-```
-
-Access the services:
-- **FastAPI**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
-- **Streamlit Dashboard**: http://localhost:8501
-- **MLflow UI**: http://localhost:5000
-
-**Data Persistence**: Your MLflow experiments, trained models, and data persist on your local filesystem in `./mlruns`, `./models`, and `./data` directories. They survive container restarts.
-
-### Docker (Individual Containers)
-
-Alternatively, build and run containers individually:
-
-```bash
-# Build API container
-docker build -t nidstream-api .
-
-# Build Streamlit container
-docker build -t nidstream-dashboard -f Dockerfile.streamlit .
-
-# Run containers
-docker run -p 8000:8000 --env-file .env nidstream-api
-docker run -p 8501:8501 --env-file .env nidstream-dashboard
-```
-
-### Testing
-
-```bash
-# Run all tests
 uv run pytest
-
-# Run specific test modules
-uv run pytest tests/test_features.py
-uv run pytest tests/test_training.py
-
-# Run with coverage
 uv run pytest --cov=src --cov-report=html
 ```
 
@@ -300,38 +209,38 @@ uv run pytest --cov=src --cov-report=html
 ```
 nidstream/
 ├── .github/
-│   ├── workflows/
-│   │   └── ci.yml              # GitHub Actions CI/CD
+│   └── workflows/ci.yml            # GitHub Actions CI
 ├── configs/
-│   ├── model_config.yaml       # Model hyperparameters
-│   └── pipeline_config.yaml    # Pipeline settings
+│   ├── model_config.yaml           # Model hyperparameters
+│   └── pipeline_config.yaml        # Pipeline settings
 ├── data/
-│   ├── raw/                    # Raw CSVs from S3 (gitignored)
-│   ├── processed/              # Preprocessed features (gitignored)
-│   └── predictions/            # Batch predictions (gitignored)
-├── models/
-│   └── *.pkl                   # Trained models (gitignored)
+│   ├── raw/                        # Raw CSVs (gitignored)
+│   └── processed/                  # Parquet features (gitignored)
+├── models/                         # Trained models (gitignored)
+│   └── pyspark/                    # PySpark ML models saved here
 ├── notebooks/
-│   ├── 01_eda.ipynb           # Exploratory data analysis
-│   ├── 02_feature_engineering.ipynb
-│   └── 03_model_training.ipynb
+│   └── BCCC-CSE-CIC-IDS2018/       # Training notebooks (local + EMR)
+│       ├── training_utils.py       # Shared utilities (synced to S3 for EMR)
+│       └── 01_eda … 04_*.ipynb
+├── scripts/
+│   ├── start.sh                    # Start all services (local or --aws)
+│   ├── stop.sh                     # Stop all services (--local skips EMR)
+│   └── emr/
+│       ├── 01_create_emr_roles.sh  # One-time IAM setup
+│       ├── 02_launch_cluster.sh    # Launch EMR cluster
+│       ├── 03_ssh_tunnel.sh        # Open SSM port-forwarding tunnels
+│       └── 04_terminate_cluster.sh # Terminate cluster
 ├── src/
-│   ├── feature_pipeline/
-│   ├── training_pipeline/
-│   ├── inference_pipeline/
-│   ├── batch/
-│   └── api/
-├── tests/
-│   ├── test_features.py
-│   ├── test_training.py
-│   └── test_inference.py
-├── app.py                      # Streamlit dashboard
-├── Dockerfile                  # API container
-├── Dockerfile.streamlit        # Dashboard container
-├── nids-api-task-def.json     # ECS task definition (API)
-├── nids-dashboard-task-def.json # ECS task definition (Dashboard)
-├── pyproject.toml              # UV dependencies
-└── README.md
+│   ├── api/main.py                 # FastAPI inference service
+│   ├── inference_pipeline/         # Model loading and prediction
+│   └── schemas/                    # Pydantic request/response models
+├── app.py                          # Streamlit dashboard
+├── Dockerfile                      # FastAPI container
+├── Dockerfile.streamlit            # Streamlit container
+├── Dockerfile.mlflow               # MLflow container (with S3 support)
+├── docker-compose.yml              # Local services stack
+├── pyproject.toml                  # Dependencies (UV)
+└── .env                            # Local environment config
 ```
 
 ## Key Design Patterns

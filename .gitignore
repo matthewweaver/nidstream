@@ -81,12 +81,20 @@ htmlcov/
 spark-warehouse/
 metastore_db/
 derby.log
+*/checkpoints/*
 
 # AWS
 *.pem
 credentials
+.transfer-instance-id
+.emr-cluster-id
+.emr-master-dns
 
 # Temporary files
 tmp/
 temp/
 *.tmp
+*.crc
+
+# Github
+.github/*

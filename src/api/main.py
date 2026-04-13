@@ -105,8 +105,7 @@ async def startup_event():
         detector = load_detector(str(model_dir))
         logger.info("Model loaded successfully")
     except Exception as e:
-        logger.error(f"Failed to load model: {e}")
-        raise
+        logger.warning(f"No model loaded at startup: {e}. Call POST /model/reload once a model is available.")
 
 
 @app.get("/", tags=["General"])
